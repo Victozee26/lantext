@@ -22,6 +22,7 @@ socket.bind(PORT, () => {
     socket.setBroadcast(true);
     console.log(`LAN Chat listening on port ${PORT}`);
     console.log('Type your messages and press Enter to send to all devices on LAN');
+    process.stdout.write('> '); // Initial prompt
 });
 
 // Listen for incoming messages
@@ -31,4 +32,15 @@ socket.on('message', (msg, rinfo) => {
         console.log(`\n[LAN MESSAGE from ${rinfo.address}]: ${text}`);
         process.stdout.write('> '); // Reprompt for input
     }
+});
+
+// Handle user input from stdin
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (data) => {
+    const message = data.toString().trim();
+    if (message) {
+        sendMessage(message);
+        console.log(`[SENT]: ${message}`);
+    }
+    process.stdout.write('> '); // Reprompt
 });
