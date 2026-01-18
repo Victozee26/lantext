@@ -23,3 +23,12 @@ socket.bind(PORT, () => {
     console.log(`LAN Chat listening on port ${PORT}`);
     console.log('Type your messages and press Enter to send to all devices on LAN');
 });
+
+// Listen for incoming messages
+socket.on('message', (msg, rinfo) => {
+    const text = msg.toString().trim();
+    if (text) {
+        console.log(`\n[LAN MESSAGE from ${rinfo.address}]: ${text}`);
+        process.stdout.write('> '); // Reprompt for input
+    }
+});
