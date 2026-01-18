@@ -1,0 +1,22 @@
+{
+  "name": "lan-chat",
+  "version": "1.0.0",
+  "description": "LAN clipboard sync and chat applications",
+  "main": "src/lan-chat.js",
+  "scripts": {
+    "start": "node src/lan-chat.js",
+    "chat": "node src/lan-chat.js",
+    "clip": "node src/lan-clip.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["lan", "chat", "clipboard", "udp", "broadcast"],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": ""
+  }
+}
