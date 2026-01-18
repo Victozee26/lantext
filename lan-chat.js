@@ -30,7 +30,6 @@ socket.bind(PORT, () => {
 // Listen for incoming messages
 socket.on('message', (msg, rinfo) => {
     const text = msg.toString().trim();
-    console.log(`Received raw message: "${msg.toString()}" from ${rinfo.address}:${rinfo.port}`);
     if (text) {
         console.log(`\n[LAN MESSAGE from ${rinfo.address}]: ${text}`);
         process.stdout.write('> '); // Reprompt for input
