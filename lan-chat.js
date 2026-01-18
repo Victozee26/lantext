@@ -4,13 +4,15 @@ const dgram = require('dgram');
 // Configuration
 const PORT = 41235; // Different port from clipboard
 const BROADCAST_ADDR = '255.255.255.255';
+const TEST_MODE = process.env.TEST_MODE === 'true'; // Set TEST_MODE=true for local testing
 
 const socket = dgram.createSocket('udp4');
 
 // Function to send message to LAN
 function sendMessage(text) {
     const message = Buffer.from(text);
-    socket.send(message, 0, message.length, PORT, BROADCAST_ADDR, (err) => {
+    const targetAddr = TEST_MODE ? '127.0.0.1' : BROADCAST_ADDR;
+    socket.send(message, 0, message.length, PORT, targetAddr, (err) => {
         if (err) {
             console.error('Send error:', err.message);
         }
