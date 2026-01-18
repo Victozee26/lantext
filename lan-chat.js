@@ -44,3 +44,15 @@ process.stdin.on('data', (data) => {
     }
     process.stdout.write('> '); // Reprompt
 });
+
+// Handle socket errors
+socket.on('error', (err) => {
+    console.error('Socket error:', err.message);
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('\nShutting down LAN Chat...');
+    socket.close();
+    process.exit(0);
+});
