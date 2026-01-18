@@ -4,10 +4,12 @@ const os = require('os');
 const { execFile, spawn } = require('child_process');
 
 // Config
-const PORT = 41234;
-const BROADCAST_ADDR = '255.255.255.255';
-const POLL_INTERVAL = 1000; // check clipboard every 1 sec
-const EXEC_TIMEOUT = 2000; // 2 second timeout
+const PORT = process.env.CLIP_PORT ? parseInt(process.env.CLIP_PORT) : 41234;
+const BROADCAST_ADDR = process.env.CLIP_BROADCAST || '255.255.255.255';
+const POLL_INTERVAL = process.env.CLIP_POLL_INTERVAL ? parseInt(process.env.CLIP_POLL_INTERVAL) : 1000; // check clipboard every 1 sec
+const EXEC_TIMEOUT = process.env.CLIP_EXEC_TIMEOUT ? parseInt(process.env.CLIP_EXEC_TIMEOUT) : 2000; // 2 second timeout
+const MAX_MESSAGE_SIZE = process.env.CLIP_MAX_SIZE ? parseInt(process.env.CLIP_MAX_SIZE) : 1024 * 1024; // 1MB max
+const DEBUG = process.env.CLIP_DEBUG === 'true';
 
 const socket = dgram.createSocket('udp4');
 socket.setMaxListeners(10);
@@ -30,12 +32,12 @@ function getClipboard(callback) {
     
     try {
         if (isTermux) {
-            execFile('termux-clipboard-get', { timeout: EXEC_TIMEOUT, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+            execFile('termux-clipboard-get', { timeout: EXEC_TIMEOUT, maxBuffer: MAX_MESSAGE_SIZE }, (err, stdout) => {
                 isGettingClipboard = false;
                 callback(err ? '' : (stdout || '').trim());
             });
         } else if (isLinux) {
-            execFile('xclip', ['-selection', 'clipboard', '-o'], { timeout: EXEC_TIMEOUT, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+            execFile('xclip', ['-selection', 'clipboard', '-o'], { timeout: EXEC_TIMEOUT, maxBuffer: MAX_MESSAGE_SIZE }, (err, stdout) => {
                 isGettingClipboard = false;
                 callback(err ? '' : (stdout || '').trim());
             });
@@ -99,6 +101,10 @@ function getBroadcastAddrs() {
 }
 
 function sendClipboard(text) {
+    if (!text || text.length > MAX_MESSAGE_SIZE) {
+        if (DEBUG) console.log('Skipping send: empty or too large');
+        return;
+    }
     const message = Buffer.from(text);
     const targets = getBroadcastAddrs();
     if (!targets.length) targets.push(BROADCAST_ADDR);
@@ -106,17 +112,19 @@ function sendClipboard(text) {
         socket.send(message, 0, message.length, PORT, addr, (err) => {
             if (err) {
                 console.error(`Send to ${addr} error:`, err.message);
-            } else {
-                console.debug(`Sent clipboard to ${addr}:${PORT}`);
+            } else if (DEBUG) {
+                console.log(`Sent clipboard to ${addr}:${PORT}`);
             }
         });
     });
+    if (DEBUG) console.log(`Broadcasting clipboard: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`);
 }
 
 // Listen for messages
 socket.bind(PORT, () => {
     socket.setBroadcast(true);
-    console.log(`Listening on port ${PORT} for LAN clipboard...`);
+    console.log(`LAN Clipboard listening on port ${PORT} (poll: ${POLL_INTERVAL}ms, timeout: ${EXEC_TIMEOUT}ms)`);
+    if (DEBUG) console.log('Debug mode enabled');
 });
 
 socket.on('listening', () => {
@@ -129,9 +137,10 @@ socket.on('listening', () => {
 socket.on('message', (msg, rinfo) => {
     const text = msg.toString().trim();
     // Ignore our own messages
-    if (!text || text === lastClipboard) return;
+    if (!text || text === lastClipboard || text.length > MAX_MESSAGE_SIZE) return;
 
-    console.log(`\n[LAN CLIPBOARD RECEIVED]: ${text}`);
+    console.log(`\n[LAN CLIPBOARD RECEIVED from ${rinfo.address}]: ${text}`);
+    if (DEBUG) console.log(`Setting clipboard: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`);
     setClipboard(text);
     lastClipboard = text;
 });
