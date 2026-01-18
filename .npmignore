@@ -1,0 +1,14 @@
+# Exclude development files
+.git/
+.gitignore
+*.log
+.DS_Store
+
+# Exclude test files if any
+test/
+*.test.js
+
+# Keep source and docs
+!src/
+!README.md
+!package.json

@@ -1,5 +1,5 @@
 {
-  "name": "lan-chat",
+  "name": "lantext",
   "version": "1.0.0",
   "description": "LAN clipboard sync and chat applications",
   "main": "src/lan-chat.js",
@@ -10,13 +10,14 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": ["lan", "chat", "clipboard", "udp", "broadcast"],
-  "author": "",
+  "author": "Victozee26",
   "license": "MIT",
   "engines": {
     "node": ">=14.0.0"
   },
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/Victozee26/LanText.git"
+  },
   }
 }
