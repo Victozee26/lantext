@@ -7,6 +7,16 @@ const BROADCAST_ADDR = '255.255.255.255';
 
 const socket = dgram.createSocket('udp4');
 
+// Function to send message to LAN
+function sendMessage(text) {
+    const message = Buffer.from(text);
+    socket.send(message, 0, message.length, PORT, BROADCAST_ADDR, (err) => {
+        if (err) {
+            console.error('Send error:', err.message);
+        }
+    });
+}
+
 // Bind socket and enable broadcasting
 socket.bind(PORT, () => {
     socket.setBroadcast(true);
