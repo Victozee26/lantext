@@ -46,6 +46,19 @@ node src/lan-clip.js
 
 The clipboard will automatically sync between running instances.
 
+#### Configuration (Environment Variables)
+- `CLIP_PORT`: UDP port to use (default: 41234)
+- `CLIP_BROADCAST`: Fallback broadcast address (default: 255.255.255.255)
+- `CLIP_POLL_INTERVAL`: Clipboard check interval in ms (default: 1000)
+- `CLIP_EXEC_TIMEOUT`: Command execution timeout in ms (default: 2000)
+- `CLIP_MAX_SIZE`: Maximum message size in bytes (default: 1048576)
+- `CLIP_DEBUG`: Enable debug logging (default: false)
+
+Example:
+```bash
+CLIP_DEBUG=true CLIP_POLL_INTERVAL=500 node src/lan-clip.js
+```
+
 ## Development
 
 ### Test Mode
