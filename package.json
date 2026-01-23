@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node src/lan-chat.js",
     "chat": "node src/lan-chat.js",
+    "chat:hybrid": "node src/lan-chat-hybrid.js",
+    "chat:tcp": "TCP_ONLY=true node src/lan-chat-hybrid.js",
     "clip": "node src/lan-clip.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
