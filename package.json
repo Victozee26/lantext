@@ -6,14 +6,19 @@
   "bin": {
     "lantext": "./src/main.js"
   },
+  "files": [
+    "src/",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "start": "node src/main.js",
     "client": "node src/client.js",
     "hotspot": "node src/hotspot.js",
     "dev": "DEBUG=true node src/main.js"
   },
-  "keywords": ["chat", "lan", "network", "wifi", "cli"],
-  "author": "",
+  "keywords": ["chat", "lan", "network", "wifi", "cli", "terminal"],
+  "author": "Victozee26",
   "license": "MIT",
   "engines": {
     "node": ">=14.0.0"
