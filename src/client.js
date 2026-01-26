@@ -133,6 +133,7 @@ function connectToServer(address) {
 // Handle user input
 // Create readline interface only if stdin is a TTY (interactive terminal)
 let rl = null;
+let messageBuffer = []; // Buffer for multi-line messages
 
 if (process.stdin.isTTY) {
     rl = readline.createInterface({
@@ -141,22 +142,49 @@ if (process.stdin.isTTY) {
     });
 
     rl.on('line', (input) => {
-        const message = input.trim();
-        if (message && connection) {
-            connection.write(message + '\n');
-            console.log(`[SENT]: ${message}`);
+        // If user presses Enter on empty line and we have buffered content, send it
+        if (input.trim() === '' && messageBuffer.length > 0) {
+            const fullMessage = messageBuffer.join('\n');
+            if (connection) {
+                connection.write(fullMessage + '\n');
+                console.log(`[SENT]:\n${fullMessage}`);
+            }
+            messageBuffer = [];
+            rl.prompt();
+            return;
         }
+        
+        // Add non-empty input to buffer
+        if (input.trim() !== '') {
+            messageBuffer.push(input);
+            // Show continuation prompt for multi-line messages
+            rl.prompt();
+            return;
+        }
+        
+        // If buffer is empty and input is empty, just show prompt
         rl.prompt();
     });
 } else {
     // For piped input, use traditional stdin handling
     process.stdin.setEncoding('utf8');
+    let pipeBuffer = '';
+    
     process.stdin.on('data', (data) => {
-        const message = data.toString().trim();
-        if (message && connection) {
-            connection.write(message + '\n');
-            console.log(`[SENT]: ${message}`);
-        }
+        pipeBuffer += data;
+        const lines = pipeBuffer.split('\n');
+        
+        // Keep the last incomplete line in buffer
+        pipeBuffer = lines.pop() || '';
+        
+        // Send each complete line
+        lines.forEach(line => {
+            const message = line.trim();
+            if (message && connection) {
+                connection.write(message + '\n');
+                console.log(`[SENT]: ${message}`);
+            }
+        });
     });
 }
 

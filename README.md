@@ -63,6 +63,26 @@ lantext hotspot
 lantext server
 ```
 
+### Multi-line Messages
+
+LanText supports sending multiple lines of text as a single message. To send a multi-line message:
+
+1. Type your first line and press Enter
+2. Continue typing additional lines, pressing Enter after each line
+3. When done, press Enter again on an empty line to send the entire message
+
+**Example:**
+```
+> Line 1 of my message
+Line 2 of my message
+Line 3 of my message
+[SENT]:
+Line 1 of my message
+Line 2 of my message
+Line 3 of my message
+>
+```
+
 ### Debug Mode
 
 ```bash
