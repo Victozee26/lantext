@@ -2,6 +2,7 @@
 // Runs both server (to serve WiFi clients) and client (to participate in chat)
 const net = require('net');
 const dgram = require('dgram');
+const readline = require('readline');
 
 const SERVER_PORT = 41236;
 const DISCOVERY_PORT = 41237;
@@ -145,14 +146,31 @@ server.on('error', (err) => {
 });
 
 // Handle user input (our own messages)
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (data) => {
-    const message = data.toString().trim();
-    if (message) {
-        sendOwnMessage(message);
-    }
-    process.stdout.write('> ');
-});
+let rl = null;
+
+if (process.stdin.isTTY) {
+    rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+
+    rl.on('line', (input) => {
+        const message = input.trim();
+        if (message) {
+            sendOwnMessage(message);
+        }
+        rl.prompt();
+    });
+} else {
+    // For piped input, use traditional stdin handling
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (data) => {
+        const message = data.toString().trim();
+        if (message) {
+            sendOwnMessage(message);
+        }
+    });
+}
 
 // Graceful shutdown
 process.on('SIGINT', () => {
@@ -161,6 +179,7 @@ process.on('SIGINT', () => {
     if (clientConnection) clientConnection.end();
     server.close();
     discoverySocket.close();
+    if (rl) rl.close();
     process.exit(0);
 });
 
@@ -168,4 +187,9 @@ log('LAN Chat Hotspot initialized');
 log('- Server port:', SERVER_PORT);
 log('- Discovery port:', DISCOVERY_PORT);
 log('- Type messages to chat with connected clients\n');
-process.stdout.write('> ');
+if (rl) {
+    rl.setPrompt('> ');
+    rl.prompt();
+} else {
+    process.stdout.write('> ');
+}

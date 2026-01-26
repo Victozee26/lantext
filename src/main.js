@@ -51,11 +51,13 @@ function askMode() {
         if (choice === 'wifi' || choice === 'client' || choice === 'c') {
             console.log('\nStarting WiFi client mode...\n');
             rl.close();
-            require('./client.js');
+            // Give a small delay to ensure readline is fully closed before loading client
+            setImmediate(() => require('./client.js'));
         } else if (choice === 'hotspot' || choice === 'server' || choice === 'h' || choice === 's') {
             console.log('\nStarting hotspot/server mode...\n');
             rl.close();
-            require('./hotspot.js');
+            // Give a small delay to ensure readline is fully closed before loading hotspot
+            setImmediate(() => require('./hotspot.js'));
         } else {
             console.log('Invalid choice. Please enter "wifi" or "hotspot".\n');
             askMode(); // Ask again

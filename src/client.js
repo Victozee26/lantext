@@ -3,6 +3,7 @@
 const net = require('net');
 const dgram = require('dgram');
 const os = require('os');
+const readline = require('readline');
 
 const CLIENT_PORT = 41238;
 const DISCOVERY_PORT = 41237;
@@ -84,7 +85,12 @@ function connectToServer(address) {
     connection = net.createConnection({ host: address, port: serverPort }, () => {
         log(`Connected to server at ${address}:${serverPort}`);
         log('Type your messages and press Enter to send\n');
-        process.stdout.write('> ');
+        if (rl) {
+            rl.setPrompt('> ');
+            rl.prompt();
+        } else {
+            process.stdout.write('> ');
+        }
     });
     
     connection.setEncoding('utf8');
@@ -101,7 +107,7 @@ function connectToServer(address) {
                 try {
                     const envelope = JSON.parse(line);
                     console.log(`\n[LAN MESSAGE from ${envelope.sender}]: ${envelope.text}`);
-                    process.stdout.write('> ');
+                    if (rl) rl.prompt();
                 } catch (err) {
                     debug(`Failed to parse message: ${err.message}`);
                 }
@@ -125,15 +131,34 @@ function connectToServer(address) {
 }
 
 // Handle user input
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (data) => {
-    const message = data.toString().trim();
-    if (message && connection) {
-        connection.write(message + '\n');
-        console.log(`[SENT]: ${message}`);
-    }
-    process.stdout.write('> ');
-});
+// Create readline interface only if stdin is a TTY (interactive terminal)
+let rl = null;
+
+if (process.stdin.isTTY) {
+    rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+
+    rl.on('line', (input) => {
+        const message = input.trim();
+        if (message && connection) {
+            connection.write(message + '\n');
+            console.log(`[SENT]: ${message}`);
+        }
+        rl.prompt();
+    });
+} else {
+    // For piped input, use traditional stdin handling
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (data) => {
+        const message = data.toString().trim();
+        if (message && connection) {
+            connection.write(message + '\n');
+            console.log(`[SENT]: ${message}`);
+        }
+    });
+}
 
 // Start client
 function start() {
@@ -148,6 +173,7 @@ function start() {
 process.on('SIGINT', () => {
     console.log('\nShutting down LAN Chat Client...');
     if (connection) connection.end();
+    if (rl) rl.close();
     process.exit(0);
 });
 
