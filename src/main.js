@@ -8,11 +8,6 @@ const readline = require('readline');
 const args = process.argv.slice(2);
 const mode = args[0];
 
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-});
-
 function showHelp() {
     console.log(`
 LanText - Local Area Network Chat Application
@@ -43,6 +38,12 @@ Examples:
 function askMode() {
     console.log('\nWelcome to LanText - LAN Chat Application');
     console.log('==========================================\n');
+
+    // Only create readline interface for interactive mode
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
 
     rl.question('Are you connecting to WiFi (client) or creating a hotspot (server)? [wifi/hotspot]: ', (answer) => {
         const choice = answer.toLowerCase().trim();
