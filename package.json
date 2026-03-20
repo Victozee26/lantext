@@ -2,6 +2,7 @@
   "name": "lantext",
   "version": "1.0.0",
   "description": "A local area network chat application for WiFi devices",
+  "type": "module",
   "main": "src/main.js",
   "bin": {
     "lantext": "./src/main.js"
@@ -17,7 +18,14 @@
     "hotspot": "node src/hotspot.js",
     "dev": "DEBUG=true node src/main.js"
   },
-  "keywords": ["chat", "lan", "network", "wifi", "cli", "terminal"],
+  "keywords": [
+    "chat",
+    "lan",
+    "network",
+    "wifi",
+    "cli",
+    "terminal"
+  ],
   "author": "Victozee26",
   "license": "MIT",
   "engines": {
@@ -31,5 +39,11 @@
     "url": "https://github.com/Victozee26/LanText/issues"
   },
   "homepage": "https://github.com/Victozee26/LanText#readme",
-  "preferGlobal": true
+  "preferGlobal": true,
+  "dependencies": {
+    "@clack/prompts": "^1.1.0",
+    "boxen": "^8.0.1",
+    "chalk": "^5.6.2",
+    "ora": "^9.3.0"
+  }
 }

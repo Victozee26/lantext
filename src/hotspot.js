@@ -1,13 +1,21 @@
 // hotspot.js - Combined server + client for hotspot devices
 // Runs both server (to serve WiFi clients) and client (to participate in chat)
-const net = require('net');
-const dgram = require('dgram');
-const readline = require('readline');
+import net from 'net';
+import dgram from 'dgram';
+import readline from 'readline';
+import {
+    status, statusSuccess, statusError,
+    formatIncoming, formatSent, getPrompt,
+    clientConnected, clientDisconnected,
+    debug as debugLog, theme,
+} from './ui.js';
 
 const SERVER_PORT = 41236;
 const DISCOVERY_PORT = 41237;
 const CLIENT_PORT = 41238;
 const DEBUG = process.env.DEBUG === 'true';
+
+const LABEL = 'HOTSPOT';
 
 // Store connected clients
 const clients = new Set();
@@ -16,21 +24,21 @@ const clients = new Set();
 const messageHistory = new Map();
 const HISTORY_WINDOW = 2000; // 2 seconds
 
-let clientConnection = null; // For when hotspot also acts as client
+let clientConnection = null;
 
 function log(msg) {
-    console.log(`[HOTSPOT] ${msg}`);
+    status(LABEL, msg);
 }
 
 function debug(msg) {
-    if (DEBUG) log(msg);
+    debugLog(LABEL, msg);
 }
 
 // Create TCP server
 const server = net.createServer((socket) => {
     const clientId = `${socket.remoteAddress}:${socket.remotePort}`;
     clients.add(socket);
-    log(`Client connected: ${clientId} (total: ${clients.size})`);
+    clientConnected(clientId, clients.size);
 
     socket.setEncoding('utf8');
 
@@ -43,7 +51,7 @@ const server = net.createServer((socket) => {
             const envelope = {
                 sender: socket.remoteAddress,
                 timestamp: Date.now(),
-                text: message
+                text: message,
             };
 
             // Broadcast to all other clients and to our own client connection
@@ -54,13 +62,14 @@ const server = net.createServer((socket) => {
 
     socket.on('error', (err) => {
         if (err.code !== 'ECONNRESET') {
-            console.error(`Client error (${clientId}): ${err.message}`);
+            statusError(LABEL, `Client error (${clientId}): ${err.message}`);
         }
     });
 
     socket.on('end', () => {
         clients.delete(socket);
-        log(`Client disconnected: ${clientId} (total: ${clients.size})`);
+        clientDisconnected(clientId, clients.size);
+        if (rl) rl.prompt();
     });
 });
 
@@ -92,8 +101,9 @@ function broadcastToClients(envelope, excludeSocket = null) {
 
 // Display message in our own terminal
 function displayMessage(envelope) {
-    console.log(`\n[LAN MESSAGE from ${envelope.sender}]: ${envelope.text}`);
-    process.stdout.write('> ');
+    formatIncoming(envelope);
+    if (rl) rl.prompt();
+    else process.stdout.write(getPrompt());
 }
 
 // Handle our own messages (when we type something)
@@ -101,21 +111,21 @@ function sendOwnMessage(text) {
     const envelope = {
         sender: 'HOTSPOT',
         timestamp: Date.now(),
-        text: text
+        text: text,
     };
 
     // Broadcast to all clients
     broadcastToClients(envelope);
 
     // Display our own message
-    console.log(`[SENT]: ${text}`);
+    formatSent(text);
 }
 
 // UDP discovery broadcast (announce server presence)
 const discoverySocket = dgram.createSocket('udp4');
 discoverySocket.bind(DISCOVERY_PORT, () => {
     discoverySocket.setBroadcast(true);
-    log(`Discovery broadcast listening on port ${DISCOVERY_PORT}`);
+    debug(`Discovery broadcast listening on port ${DISCOVERY_PORT}`);
 });
 
 // Respond to discovery requests
@@ -123,36 +133,35 @@ discoverySocket.on('message', (msg, rinfo) => {
     const message = msg.toString().trim();
     if (message === 'LAN_CHAT_DISCOVERY') {
         debug(`Discovery request from ${rinfo.address}`);
-        // Send server location back
         const response = JSON.stringify({
             type: 'SERVER_FOUND',
             port: SERVER_PORT,
-            address: '0.0.0.0'
+            address: '0.0.0.0',
         });
         discoverySocket.send(response, 0, response.length, rinfo.port, rinfo.address, (err) => {
-            if (err) console.error(`Discovery response error: ${err.message}`);
+            if (err) statusError(LABEL, `Discovery response error: ${err.message}`);
         });
     }
 });
 
 // Start TCP server
 server.listen(SERVER_PORT, '0.0.0.0', () => {
-    log(`Server listening on port ${SERVER_PORT}`);
+    statusSuccess(LABEL, `Server listening on port ${theme.info(String(SERVER_PORT))}`);
     log(`Waiting for clients...`);
 });
 
 server.on('error', (err) => {
-    console.error(`Server error: ${err.message}`);
+    statusError(LABEL, `Server error: ${err.message}`);
 });
 
 // Handle user input (our own messages)
 let rl = null;
-let messageBuffer = []; // Buffer for multi-line messages
+let messageBuffer = [];
 
 if (process.stdin.isTTY) {
     rl = readline.createInterface({
         input: process.stdin,
-        output: process.stdout
+        output: process.stdout,
     });
 
     rl.on('line', (input) => {
@@ -164,15 +173,14 @@ if (process.stdin.isTTY) {
             rl.prompt();
             return;
         }
-        
+
         // Add non-empty input to buffer
         if (input.trim() !== '') {
             messageBuffer.push(input);
-            // Show continuation prompt for multi-line messages
             rl.prompt();
             return;
         }
-        
+
         // If buffer is empty and input is empty, just show prompt
         rl.prompt();
     });
@@ -180,15 +188,12 @@ if (process.stdin.isTTY) {
     // For piped input, use traditional stdin handling
     process.stdin.setEncoding('utf8');
     let pipeBuffer = '';
-    
+
     process.stdin.on('data', (data) => {
         pipeBuffer += data;
         const lines = pipeBuffer.split('\n');
-        
-        // Keep the last incomplete line in buffer
         pipeBuffer = lines.pop() || '';
-        
-        // Send each complete line
+
         lines.forEach(line => {
             const message = line.trim();
             if (message) {
@@ -200,7 +205,8 @@ if (process.stdin.isTTY) {
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-    log('Shutting down hotspot...');
+    console.log();
+    status(LABEL, theme.muted('Shutting down hotspot...'));
     clients.forEach(client => client.end());
     if (clientConnection) clientConnection.end();
     server.close();
@@ -210,12 +216,13 @@ process.on('SIGINT', () => {
 });
 
 log('LAN Chat Hotspot initialized');
-log('- Server port:', SERVER_PORT);
-log('- Discovery port:', DISCOVERY_PORT);
-log('- Type messages to chat with connected clients\n');
+debug(`Server port: ${SERVER_PORT}`);
+debug(`Discovery port: ${DISCOVERY_PORT}`);
+log('Type messages to chat with connected clients');
+console.log();
 if (rl) {
-    rl.setPrompt('> ');
+    rl.setPrompt(getPrompt());
     rl.prompt();
 } else {
-    process.stdout.write('> ');
+    process.stdout.write(getPrompt());
 }

@@ -1,9 +1,14 @@
-// client.js - Client for WiFi devices (Phone B)
+// client.js - Client for WiFi devices
 // Connects to a LAN Chat Server
-const net = require('net');
-const dgram = require('dgram');
-const os = require('os');
-const readline = require('readline');
+import net from 'net';
+import dgram from 'dgram';
+import os from 'os';
+import readline from 'readline';
+import {
+    showBanner, status, statusSuccess, statusError,
+    formatIncoming, formatSent, createSpinner,
+    getPrompt, debug as debugLog, theme,
+} from './ui.js';
 
 const CLIENT_PORT = 41238;
 const DISCOVERY_PORT = 41237;
@@ -14,12 +19,14 @@ let serverAddress = process.env.SERVER || null;
 const serverPort = 41236;
 let connection = null;
 
+const LABEL = 'CLIENT';
+
 function log(msg) {
-    console.log(`[CLIENT] ${msg}`);
+    status(LABEL, msg);
 }
 
 function debug(msg) {
-    if (DEBUG) log(msg);
+    debugLog(LABEL, msg);
 }
 
 // Get local IP subnet
@@ -37,26 +44,28 @@ function getSubnet() {
 
 // Discover server on the network
 function discoverServer(callback) {
-    log('Searching for LAN Chat Server...');
-    
+    const spinner = createSpinner('Searching for LAN Chat Server...');
+    spinner.start();
+
     const discoverySocket = dgram.createSocket('udp4');
     const subnet = getSubnet();
     const discoveryMsg = Buffer.from('LAN_CHAT_DISCOVERY');
-    
+
     let foundServer = false;
     const timeout = setTimeout(() => {
         if (!foundServer) {
-            log('No server found. Specify with SERVER=<ip> node src/client.js');
+            spinner.fail(theme.error('No server found'));
+            statusError(LABEL, `Specify with ${theme.warning('SERVER=<ip>')} node src/client.js`);
         }
         discoverySocket.close();
     }, SERVER_DISCOVERY_TIMEOUT);
-    
+
     // Scan subnet for server
     for (let i = 1; i <= 254; i++) {
         const testAddr = `${subnet}.${i}`;
-        discoverySocket.send(discoveryMsg, 0, discoveryMsg.length, DISCOVERY_PORT, testAddr, () => {});
+        discoverySocket.send(discoveryMsg, 0, discoveryMsg.length, DISCOVERY_PORT, testAddr, () => { });
     }
-    
+
     discoverySocket.on('message', (msg, rinfo) => {
         try {
             const response = JSON.parse(msg.toString());
@@ -65,14 +74,14 @@ function discoverServer(callback) {
                 clearTimeout(timeout);
                 discoverySocket.close();
                 serverAddress = rinfo.address;
-                log(`Server found at ${serverAddress}:${response.port}`);
+                spinner.succeed(theme.success(`Server found at ${theme.info(serverAddress + ':' + response.port)}`));
                 callback(serverAddress);
             }
         } catch (err) {
             debug(`Invalid discovery response: ${err.message}`);
         }
     });
-    
+
     discoverySocket.on('error', (err) => {
         debug(`Discovery error: ${err.message}`);
     });
@@ -81,32 +90,33 @@ function discoverServer(callback) {
 // Connect to server
 function connectToServer(address) {
     if (connection) return;
-    
+
     connection = net.createConnection({ host: address, port: serverPort }, () => {
-        log(`Connected to server at ${address}:${serverPort}`);
-        log('Type your messages and press Enter to send\n');
+        statusSuccess(LABEL, `Connected to server at ${theme.info(address + ':' + serverPort)}`);
+        log('Type your messages and press Enter to send');
+        console.log();
         if (rl) {
-            rl.setPrompt('> ');
+            rl.setPrompt(getPrompt());
             rl.prompt();
         } else {
-            process.stdout.write('> ');
+            process.stdout.write(getPrompt());
         }
     });
-    
+
     connection.setEncoding('utf8');
-    
+
     // Handle incoming messages from server
     let buffer = '';
     connection.on('data', (data) => {
         buffer += data;
         const lines = buffer.split('\n');
         buffer = lines.pop(); // Keep incomplete line in buffer
-        
+
         lines.forEach(line => {
             if (line.trim()) {
                 try {
                     const envelope = JSON.parse(line);
-                    console.log(`\n[LAN MESSAGE from ${envelope.sender}]: ${envelope.text}`);
+                    formatIncoming(envelope);
                     if (rl) rl.prompt();
                 } catch (err) {
                     debug(`Failed to parse message: ${err.message}`);
@@ -114,16 +124,16 @@ function connectToServer(address) {
             }
         });
     });
-    
+
     connection.on('error', (err) => {
-        console.error(`\nConnection error: ${err.message}`);
+        statusError(LABEL, `Connection error: ${err.message}`);
         connection = null;
         log('Reconnecting...');
         setTimeout(() => discoverServer(connectToServer), 2000);
     });
-    
+
     connection.on('end', () => {
-        log('Disconnected from server');
+        statusError(LABEL, 'Disconnected from server');
         connection = null;
         log('Reconnecting...');
         setTimeout(() => discoverServer(connectToServer), 2000);
@@ -131,14 +141,13 @@ function connectToServer(address) {
 }
 
 // Handle user input
-// Create readline interface only if stdin is a TTY (interactive terminal)
 let rl = null;
-let messageBuffer = []; // Buffer for multi-line messages
+let messageBuffer = [];
 
 if (process.stdin.isTTY) {
     rl = readline.createInterface({
         input: process.stdin,
-        output: process.stdout
+        output: process.stdout,
     });
 
     rl.on('line', (input) => {
@@ -147,21 +156,20 @@ if (process.stdin.isTTY) {
             const fullMessage = messageBuffer.join('\n');
             if (connection) {
                 connection.write(fullMessage + '\n');
-                console.log(`[SENT]:\n${fullMessage}`);
+                formatSent(fullMessage);
             }
             messageBuffer = [];
             rl.prompt();
             return;
         }
-        
+
         // Add non-empty input to buffer
         if (input.trim() !== '') {
             messageBuffer.push(input);
-            // Show continuation prompt for multi-line messages
             rl.prompt();
             return;
         }
-        
+
         // If buffer is empty and input is empty, just show prompt
         rl.prompt();
     });
@@ -169,20 +177,17 @@ if (process.stdin.isTTY) {
     // For piped input, use traditional stdin handling
     process.stdin.setEncoding('utf8');
     let pipeBuffer = '';
-    
+
     process.stdin.on('data', (data) => {
         pipeBuffer += data;
         const lines = pipeBuffer.split('\n');
-        
-        // Keep the last incomplete line in buffer
         pipeBuffer = lines.pop() || '';
-        
-        // Send each complete line
+
         lines.forEach(line => {
             const message = line.trim();
             if (message && connection) {
                 connection.write(message + '\n');
-                console.log(`[SENT]: ${message}`);
+                formatSent(message);
             }
         });
     });
@@ -199,14 +204,15 @@ function start() {
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-    console.log('\nShutting down LAN Chat Client...');
+    console.log();
+    status(LABEL, theme.muted('Shutting down...'));
     if (connection) connection.end();
     if (rl) rl.close();
     process.exit(0);
 });
 
 log('LAN Chat Client initialized');
-log('- Discovery port:', DISCOVERY_PORT);
-log('- Server port:', serverPort);
-log('');
+debug(`Discovery port: ${DISCOVERY_PORT}`);
+debug(`Server port: ${serverPort}`);
+console.log();
 start();

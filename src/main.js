@@ -1,94 +1,74 @@
 #!/usr/bin/env node
 
 // main.js - Entry point for LAN Chat application
-const path = require('path');
-const readline = require('readline');
+import { select, intro, outro, isCancel } from '@clack/prompts';
+import { showBanner, formatHelp, theme } from './ui.js';
 
 // Get command line arguments
 const args = process.argv.slice(2);
 const mode = args[0];
 
-function showHelp() {
-    console.log(`
-LanText - Local Area Network Chat Application
+async function askMode() {
+    showBanner();
 
-Usage:
-  lantext                        Interactive mode (choose hotspot or wifi)
-  lantext client                 Run as wifi client
-  lantext hotspot                Run as hotspot/server
-  lantext help                   Show this help message
+    intro(theme.bold('Choose your connection mode'));
 
-Modes:
-  client                         Connect to a server on the network (wifi mode)
-  hotspot                        Act as a server and accept connections (hotspot mode)
-
-Environment Variables:
-  DEBUG=true                     Enable debug logging
-  SERVER=<ip>                    Specify server IP (for client mode)
-
-Examples:
-  lantext                        # Interactive mode
-  lantext client                 # Direct client mode
-  lantext hotspot                # Direct hotspot mode
-  DEBUG=true lantext client      # Client with debug
-  SERVER=192.168.1.5 lantext client  # Client with specific server
-    `);
-}
-
-function askMode() {
-    console.log('\nWelcome to LanText - LAN Chat Application');
-    console.log('==========================================\n');
-
-    // Only create readline interface for interactive mode
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
+    const selected = await select({
+        message: 'How are you connecting?',
+        options: [
+            {
+                value: 'wifi',
+                label: `${theme.brand('📡  WiFi Client')}`,
+                hint: 'Connect to an existing server on the network',
+            },
+            {
+                value: 'hotspot',
+                label: `${theme.accent('📶  Hotspot Server')}`,
+                hint: 'Create a server and accept connections',
+            },
+        ],
     });
 
-    rl.question('Are you connecting to WiFi (client) or creating a hotspot (server)? [wifi/hotspot]: ', (answer) => {
-        const choice = answer.toLowerCase().trim();
+    if (isCancel(selected)) {
+        outro(theme.muted('Cancelled. Goodbye!'));
+        process.exit(0);
+    }
 
-        if (choice === 'wifi' || choice === 'client' || choice === 'c') {
-            console.log('\nStarting WiFi client mode...\n');
-            rl.close();
-            // Give a small delay to ensure readline is fully closed before loading client
-            setImmediate(() => require('./client.js'));
-        } else if (choice === 'hotspot' || choice === 'server' || choice === 'h' || choice === 's') {
-            console.log('\nStarting hotspot/server mode...\n');
-            rl.close();
-            // Give a small delay to ensure readline is fully closed before loading hotspot
-            setImmediate(() => require('./hotspot.js'));
-        } else {
-            console.log('Invalid choice. Please enter "wifi" or "hotspot".\n');
-            askMode(); // Ask again
-        }
-    });
+    if (selected === 'wifi') {
+        outro(theme.success('Starting WiFi client mode...'));
+        await import('./client.js');
+    } else if (selected === 'hotspot') {
+        outro(theme.success('Starting hotspot/server mode...'));
+        await import('./hotspot.js');
+    }
 }
 
 // Load and run the appropriate module
-function run(mode) {
+async function run(mode) {
     switch (mode) {
         case 'client':
         case 'wifi':
-            require('./client.js');
+            showBanner('client');
+            await import('./client.js');
             break;
         case 'hotspot':
         case 'server':
-            require('./hotspot.js');
+            showBanner('hotspot');
+            await import('./hotspot.js');
             break;
         case 'help':
         case '--help':
         case '-h':
-            showHelp();
+            formatHelp();
             process.exit(0);
             break;
         case undefined:
             // No arguments provided, run interactive mode
-            askMode();
+            await askMode();
             break;
         default:
-            console.log(`Unknown mode: ${mode}\n`);
-            showHelp();
+            console.log(theme.error(`Unknown mode: ${mode}\n`));
+            formatHelp();
             process.exit(1);
     }
 }
