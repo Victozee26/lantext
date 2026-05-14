@@ -2,10 +2,10 @@
 import chalk from 'chalk';
 import boxen from 'boxen';
 import ora from 'ora';
-import os from 'os';
+import { getLocalIP } from './utils.js';
 
 // ─── Color Theme ───────────────────────────────────────────────
-const theme = {
+export const theme = {
   brand: chalk.hex('#4A9EFF'),       // LAN blue
   accent: chalk.hex('#36D399'),       // Teal green
   dim: chalk.dim,
@@ -21,18 +21,6 @@ const theme = {
 };
 
 // ─── Helpers ───────────────────────────────────────────────────
-function getLocalIP() {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-  return '127.0.0.1';
-}
-
 function timestamp() {
   const now = new Date();
   return theme.muted(

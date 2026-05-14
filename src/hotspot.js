@@ -1,237 +1,107 @@
-// hotspot.js - Combined server + client for hotspot devices
-// Runs both server (to serve WiFi clients) and client (to participate in chat)
+// hotspot.js - Combined server + client logic for hotspot devices
 import net from 'net';
 import dgram from 'dgram';
-import readline from 'readline';
-import {
-    status, statusSuccess, statusError,
-    formatIncoming, formatSent, getPrompt,
-    clientConnected, clientDisconnected,
-    debug as debugLog, theme,
-} from './ui.js';
+import { EventEmitter } from 'events';
+import { PORTS, DISCOVERY_MSG, FOUND_MSG, createEnvelope } from './utils.js';
 
-const SERVER_PORT = 41236;
-const DISCOVERY_PORT = 41237;
-const CLIENT_PORT = 41238;
-const DEBUG = process.env.DEBUG === 'true';
+export class LanServer extends EventEmitter {
+  constructor() {
+    super();
+    this.clients = new Set();
+    this.messageHistory = new Map();
+    this.HISTORY_WINDOW = 2000;
+    this.server = null;
+    this.discoverySocket = null;
+  }
 
-const LABEL = 'HOTSPOT';
+  start() {
+    // TCP Server
+    this.server = net.createServer((socket) => {
+      const clientId = `${socket.remoteAddress}:${socket.remotePort}`;
+      this.clients.add(socket);
+      this.emit('clientConnected', clientId, this.clients.size);
 
-// Store connected clients
-const clients = new Set();
-
-// Message tracking to prevent duplicates
-const messageHistory = new Map();
-const HISTORY_WINDOW = 2000; // 2 seconds
-
-let clientConnection = null;
-
-function log(msg) {
-    status(LABEL, msg);
-}
-
-function debug(msg) {
-    debugLog(LABEL, msg);
-}
-
-// Create TCP server
-const server = net.createServer((socket) => {
-    const clientId = `${socket.remoteAddress}:${socket.remotePort}`;
-    clients.add(socket);
-    clientConnected(clientId, clients.size);
-
-    socket.setEncoding('utf8');
-
-    socket.on('data', (data) => {
+      socket.setEncoding('utf8');
+      socket.on('data', (data) => {
         const message = data.toString().trim();
         if (message) {
-            debug(`Received from ${clientId}: ${message}`);
-
-            // Create message envelope with sender info
-            const envelope = {
-                sender: socket.remoteAddress,
-                timestamp: Date.now(),
-                text: message,
-            };
-
-            // Broadcast to all other clients and to our own client connection
-            broadcastToClients(envelope, socket);
-            displayMessage(envelope);
+          const envelope = createEnvelope(socket.remoteAddress, message);
+          this.broadcast(envelope, socket);
+          this.emit('message', envelope);
         }
-    });
+      });
 
-    socket.on('error', (err) => {
+      socket.on('error', (err) => {
         if (err.code !== 'ECONNRESET') {
-            statusError(LABEL, `Client error (${clientId}): ${err.message}`);
+          this.emit('error', `Client error (${clientId}): ${err.message}`);
         }
+      });
+
+      socket.on('end', () => {
+        this.clients.delete(socket);
+        this.emit('clientDisconnected', clientId, this.clients.size);
+      });
     });
 
-    socket.on('end', () => {
-        clients.delete(socket);
-        clientDisconnected(clientId, clients.size);
-        if (rl) rl.prompt();
+    this.server.listen(PORTS.TCP, '0.0.0.0', () => {
+      this.emit('ready', PORTS.TCP);
     });
-});
 
-// Broadcast message to all connected clients
-function broadcastToClients(envelope, excludeSocket = null) {
+    this.server.on('error', (err) => {
+      this.emit('error', `Server error: ${err.message}`);
+    });
+
+    // UDP Discovery
+    this.discoverySocket = dgram.createSocket('udp4');
+    this.discoverySocket.bind(PORTS.UDP_DISCOVERY, () => {
+      this.discoverySocket.setBroadcast(true);
+      this.emit('debug', `Discovery listening on ${PORTS.UDP_DISCOVERY}`);
+    });
+
+    this.discoverySocket.on('message', (msg, rinfo) => {
+      if (msg.toString().trim() === DISCOVERY_MSG) {
+        const response = JSON.stringify({
+          type: FOUND_MSG,
+          port: PORTS.TCP,
+          address: '0.0.0.0',
+        });
+        this.discoverySocket.send(response, 0, response.length, rinfo.port, rinfo.address);
+      }
+    });
+  }
+
+  broadcast(envelope, excludeSocket = null) {
     const message = JSON.stringify(envelope) + '\n';
     const messageKey = `${envelope.sender}:${envelope.text}`;
 
-    // Track message to prevent duplicates
-    messageHistory.set(messageKey, envelope.timestamp);
+    this.messageHistory.set(messageKey, envelope.timestamp);
+    this.cleanHistory();
 
-    // Clean up old messages
+    this.clients.forEach((client) => {
+      if (client !== excludeSocket && client.writable) {
+        client.write(message);
+      }
+    });
+  }
+
+  cleanHistory() {
     const now = Date.now();
-    for (const [key, timestamp] of messageHistory.entries()) {
-        if (now - timestamp > HISTORY_WINDOW) {
-            messageHistory.delete(key);
-        }
+    for (const [key, timestamp] of this.messageHistory.entries()) {
+      if (now - timestamp > this.HISTORY_WINDOW) {
+        this.messageHistory.delete(key);
+      }
     }
+  }
 
-    // Send to all clients except sender
-    clients.forEach((client) => {
-        if (client !== excludeSocket && client.writable) {
-            client.write(message);
-        }
-    });
+  send(text) {
+    const envelope = createEnvelope('HOTSPOT', text);
+    this.broadcast(envelope);
+    return envelope;
+  }
 
-    debug(`Broadcast to ${clients.size - (excludeSocket ? 1 : 0)} clients`);
-}
-
-// Display message in our own terminal
-function displayMessage(envelope) {
-    formatIncoming(envelope);
-    if (rl) rl.prompt();
-    else process.stdout.write(getPrompt());
-}
-
-// Handle our own messages (when we type something)
-function sendOwnMessage(text) {
-    const envelope = {
-        sender: 'HOTSPOT',
-        timestamp: Date.now(),
-        text: text,
-    };
-
-    // Broadcast to all clients
-    broadcastToClients(envelope);
-
-    // Display our own message
-    formatSent(text);
-}
-
-// UDP discovery broadcast (announce server presence)
-const discoverySocket = dgram.createSocket('udp4');
-discoverySocket.bind(DISCOVERY_PORT, () => {
-    discoverySocket.setBroadcast(true);
-    debug(`Discovery broadcast listening on port ${DISCOVERY_PORT}`);
-});
-
-// Respond to discovery requests
-discoverySocket.on('message', (msg, rinfo) => {
-    const message = msg.toString().trim();
-    if (message === 'LAN_CHAT_DISCOVERY') {
-        debug(`Discovery request from ${rinfo.address}`);
-        const response = JSON.stringify({
-            type: 'SERVER_FOUND',
-            port: SERVER_PORT,
-            address: '0.0.0.0',
-        });
-        discoverySocket.send(response, 0, response.length, rinfo.port, rinfo.address, (err) => {
-            if (err) statusError(LABEL, `Discovery response error: ${err.message}`);
-        });
-    }
-});
-
-// Start TCP server
-server.listen(SERVER_PORT, '0.0.0.0', () => {
-    statusSuccess(LABEL, `Server listening on port ${theme.info(String(SERVER_PORT))}`);
-    log(`Waiting for clients...`);
-});
-
-server.on('error', (err) => {
-    statusError(LABEL, `Server error: ${err.message}`);
-});
-
-// Handle user input (our own messages)
-let rl = null;
-let messageBuffer = [];
-let pasteTimeout = null;
-
-if (process.stdin.isTTY) {
-    rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-    });
-
-    rl.on('line', (input) => {
-        messageBuffer.push(input);
-
-        if (pasteTimeout) clearTimeout(pasteTimeout);
-
-        pasteTimeout = setTimeout(() => {
-            if (messageBuffer.length > 1 && messageBuffer[messageBuffer.length - 1].trim() === '') {
-                // Fast paste or explicit double-enter
-                while (messageBuffer.length > 0 && messageBuffer[messageBuffer.length - 1].trim() === '') {
-                    messageBuffer.pop();
-                }
-
-                if (messageBuffer.length > 0) {
-                    const fullMessage = messageBuffer.join('\n');
-                    sendOwnMessage(fullMessage);
-                }
-                messageBuffer = [];
-                rl.prompt();
-            } else if (messageBuffer.length === 1 && messageBuffer[0].trim() === '') {
-                // Empty input
-                messageBuffer = [];
-                rl.prompt();
-            } else {
-                // Active typing buffer
-                rl.prompt();
-            }
-        }, 50);
-    });
-} else {
-    // For piped input, use traditional stdin handling
-    process.stdin.setEncoding('utf8');
-    let pipeBuffer = '';
-
-    process.stdin.on('data', (data) => {
-        pipeBuffer += data;
-        const lines = pipeBuffer.split('\n');
-        pipeBuffer = lines.pop() || '';
-
-        lines.forEach(line => {
-            const message = line.trim();
-            if (message) {
-                sendOwnMessage(message);
-            }
-        });
-    });
-}
-
-// Graceful shutdown
-process.on('SIGINT', () => {
-    console.log();
-    status(LABEL, theme.muted('Shutting down hotspot...'));
-    clients.forEach(client => client.end());
-    if (clientConnection) clientConnection.end();
-    server.close();
-    discoverySocket.close();
-    if (rl) rl.close();
-    process.exit(0);
-});
-
-log('LAN Chat Hotspot initialized');
-debug(`Server port: ${SERVER_PORT}`);
-debug(`Discovery port: ${DISCOVERY_PORT}`);
-log('Type messages to chat with connected clients');
-console.log();
-if (rl) {
-    rl.setPrompt(getPrompt());
-    rl.prompt();
-} else {
-    process.stdout.write(getPrompt());
+  stop() {
+    this.clients.forEach(client => client.end());
+    if (this.server) this.server.close();
+    if (this.discoverySocket) this.discoverySocket.close();
+  }
 }
