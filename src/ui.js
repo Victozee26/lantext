@@ -188,5 +188,3 @@ export function debug(label, msg) {
     console.log(`  ${theme.muted(`[${label}]`)} ${theme.dim(msg)}`);
   }
 }
-
-export { theme };
