@@ -44,6 +44,7 @@ async function askMode() {
 }
 
 async function run(mode) {
+  process.stdout.write('\x1Bc');
   switch (mode) {
     case 'client':
     case 'wifi':
