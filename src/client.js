@@ -7,24 +7,37 @@ import { PORTS, DISCOVERY_MSG, FOUND_MSG, getSubnet } from './utils.js';
 export class LanClient extends EventEmitter {
   constructor(options = {}) {
     super();
-    this.serverAddress = options.serverAddress || null;
+    this.fixedAddress = options.serverAddress || null;
+    this.serverAddress = this.fixedAddress;
     this.serverPort = PORTS.TCP;
     this.connection = null;
     this.discoveryTimeout = 5000;
+    this.retryDelay = 2000;
+    this.isStopped = false;
+    this.isSearching = false;
+    this._discoveryTimer = null;
+    this._reconnectTimer = null;
   }
 
   discover() {
-    this.emit('status', 'Searching for LAN Chat Server...');
+    if (this.isStopped) return;
+    
+    if (!this.isSearching) {
+      this.emit('status', 'Searching for LAN Chat Server...');
+      this.isSearching = true;
+    }
+
     const discoverySocket = dgram.createSocket('udp4');
     const subnet = getSubnet();
     const msg = Buffer.from(DISCOVERY_MSG);
 
     let found = false;
     const timeout = setTimeout(() => {
-      if (!found) {
-        this.emit('error', new Error('No server found'));
-      }
       discoverySocket.close();
+      if (!found && !this.isStopped) {
+        // Retry discovery without emitting error to avoid UI spam
+        this._discoveryTimer = setTimeout(() => this.discover(), 1000);
+      }
     }, this.discoveryTimeout);
 
     // Scan subnet
@@ -37,10 +50,12 @@ export class LanClient extends EventEmitter {
         const response = JSON.parse(msg.toString());
         if (response.type === FOUND_MSG && !found) {
           found = true;
+          this.isSearching = false;
           clearTimeout(timeout);
           discoverySocket.close();
           this.serverAddress = rinfo.address;
           this.emit('discovered', this.serverAddress);
+          this.connect();
         }
       } catch (err) {
         this.emit('debug', `Invalid discovery response: ${err.message}`);
@@ -53,7 +68,7 @@ export class LanClient extends EventEmitter {
   }
 
   connect(address = this.serverAddress) {
-    if (this.connection) return;
+    if (this.connection || this.isStopped) return;
     this.serverAddress = address;
 
     this.connection = net.createConnection({ host: address, port: this.serverPort }, () => {
@@ -80,18 +95,33 @@ export class LanClient extends EventEmitter {
       });
     });
 
+    const handleDisconnect = (reason) => {
+      if (this.connection) {
+        this.connection.destroy();
+        this.connection = null;
+      }
+      
+      if (this.isStopped) return;
+
+      this.emit('status', `Disconnected (${reason}). Reconnecting...`);
+      this.isSearching = false;
+      
+      // If we discovered the address, clear it so we re-discover
+      if (!this.fixedAddress) {
+        this.serverAddress = null;
+      }
+
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = setTimeout(() => this.start(), this.retryDelay);
+    };
+
     this.connection.on('error', (err) => {
-      this.emit('error', err);
-      this.connection = null;
-      this.emit('status', 'Reconnecting...');
-      setTimeout(() => this.start(), 2000);
+      this.emit('debug', `Connection error: ${err.message}`);
+      handleDisconnect('error');
     });
 
     this.connection.on('end', () => {
-      this.emit('disconnected');
-      this.connection = null;
-      this.emit('status', 'Reconnecting...');
-      setTimeout(() => this.start(), 2000);
+      handleDisconnect('server closed');
     });
   }
 
@@ -104,17 +134,23 @@ export class LanClient extends EventEmitter {
   }
 
   start() {
+    this.isStopped = false;
     if (this.serverAddress) {
       this.connect();
     } else {
       this.discover();
-      this.once('discovered', (address) => this.connect(address));
     }
   }
 
   stop() {
+    this.isStopped = true;
+    this.isSearching = false;
+    clearTimeout(this._discoveryTimer);
+    clearTimeout(this._reconnectTimer);
     if (this.connection) {
       this.connection.end();
+      this.connection.destroy();
+      this.connection = null;
     }
   }
 }
